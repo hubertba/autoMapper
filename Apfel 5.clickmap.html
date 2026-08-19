@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clickable text map</title>
+  <style>
+    body { margin: 0; }
+    img { display: block; max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <img id="mapped-image" src="Apfel 5.jpeg" width="2338" height="1652"
+       usemap="#text-map" alt="Multilingual illustrated page">
+  <map name="text-map">
+    <area shape="rect" coords="1025,1195,2030,1440" href="#german" alt="German text" title="German text">
+    <area shape="rect" coords="295,1078,945,1375" href="#hungarian" alt="Hungarian text" title="Hungarian text">
+    <area shape="rect" coords="1252,875,2130,1185" href="#croatian" alt="Croatian text" title="Croatian text">
+  </map>
+  <script>
+    // Native image-map coordinates are pixels. Rescale them when the image is responsive.
+    const image = document.getElementById('mapped-image');
+    const areas = [...document.querySelectorAll('area')];
+    const original = areas.map(area => area.coords.split(',').map(Number));
+    function resizeMap() {
+      const scaleX = image.clientWidth / 2338;
+      const scaleY = image.clientHeight / 1652;
+      areas.forEach((area, i) => {
+        const c = original[i];
+        area.coords = [c[0] * scaleX, c[1] * scaleY,
+                       c[2] * scaleX, c[3] * scaleY].map(Math.round).join(',');
+      });
+    }
+    image.addEventListener('load', resizeMap);
+    window.addEventListener('resize', resizeMap);
+    resizeMap();
+  </script>
+</body>
+</html>
