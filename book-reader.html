@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Buch lesen</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      font: 16px/1.4 system-ui, sans-serif;
+      color: #f4efe6;
+      background: #1f1a16;
+    }
+    header, footer {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px 16px;
+      padding: 12px 18px;
+      background: #2c241c;
+      border-color: #44392e;
+      border-style: solid;
+      border-width: 0;
+    }
+    header { border-bottom-width: 1px; }
+    footer { border-top-width: 1px; }
+    h1 { margin: 0; font-size: 1.15rem; font-weight: 650; }
+    .spacer { flex: 1; }
+    button, .file-btn {
+      font: inherit;
+      color: #f4efe6;
+      background: #4a3d32;
+      border: 1px solid #6a5a4a;
+      border-radius: 8px;
+      padding: 8px 14px;
+      cursor: pointer;
+    }
+    button:hover:not(:disabled), .file-btn:hover {
+      background: #5b4c3f;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+    button.active {
+      background: #6d5340;
+      border-color: #c4a574;
+    }
+    .file-btn { position: relative; overflow: hidden; }
+    .file-btn input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      font-size: 0.85rem;
+    }
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      border: 1px solid #fff8;
+    }
+    #status { min-height: 1.4em; margin: 0; color: #d4c4b0; }
+    #status.error { color: #ff8a80; }
+    main {
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      min-height: 0;
+      overflow: auto;
+    }
+    #stage {
+      position: relative;
+      display: none;
+      width: fit-content;
+      max-width: 100%;
+      line-height: 0;
+      background: #111;
+      box-shadow: 0 12px 40px #0008, 0 0 0 8px #f7f1e4;
+      border-radius: 2px;
+    }
+    #page-image {
+      display: block;
+      max-width: min(100%, 1100px);
+      max-height: calc(100vh - 170px);
+      width: auto;
+      height: auto;
+    }
+    .map-area {
+      position: absolute;
+      padding: 0;
+      border: 3px solid var(--lang-color);
+      background: color-mix(in srgb, var(--lang-color) 22%, transparent);
+      color: #fff;
+      font: 700 13px/1 system-ui, sans-serif;
+      text-shadow: 0 1px 2px #000a;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .map-area:hover, .map-area:focus {
+      z-index: 20;
+      outline: 2px solid white;
+      background: color-mix(in srgb, var(--lang-color) 40%, transparent);
+    }
+    .map-area.playing {
+      z-index: 21;
+      background: color-mix(in srgb, var(--lang-color) 50%, transparent);
+      box-shadow: 0 0 0 3px #fff8;
+    }
+    body.hide-maps .map-area:not(.playing):not(:hover):not(:focus) {
+      border-color: transparent;
+      background: transparent;
+      color: transparent;
+      text-shadow: none;
+    }
+    #page-label { font-variant-numeric: tabular-nums; font-weight: 650; }
+    audio { height: 36px; max-width: 280px; }
+    kbd {
+      font: 12px/1 ui-monospace, monospace;
+      padding: 2px 6px;
+      border: 1px solid #6a5a4a;
+      border-radius: 4px;
+      background: #3a3028;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Buch lesen</h1>
+    <p id="status">Lade Buch/data.json …</p>
+    <label class="file-btn" hidden id="folder-picker">
+      Ordner Buch wählen
+      <input id="folder" type="file" webkitdirectory directory>
+    </label>
+    <span class="spacer"></span>
+    <div class="legend" aria-hidden="true">
+      <span><i class="swatch" style="background:#1e88e5"></i> Deutsch</span>
+      <span><i class="swatch" style="background:#e53935"></i> Ungarisch</span>
+      <span><i class="swatch" style="background:#8e24aa"></i> Kroatisch</span>
+    </div>
+    <button id="toggle-maps" type="button" class="active" aria-pressed="true">Karten</button>
+  </header>
+
+  <main>
+    <div id="stage">
+      <img id="page-image" alt="Buchseite">
+    </div>
+  </main>
+
+  <footer>
+    <button id="prev" type="button" disabled>Zurück</button>
+    <span id="page-label">–</span>
+    <button id="next" type="button" disabled>Weiter</button>
+    <span class="spacer"></span>
+    <audio id="player" controls></audio>
+    <span>Blättern: <kbd>←</kbd> <kbd>→</kbd></span>
+  </footer>
+
+  <script>
+    // Map order matches create_click_map.py: German, Hungarian, Croatian.
+    const LANGUAGES = [
+      { key: 'd', name: 'Deutsch', color: '#1e88e5' },
+      { key: 'u', name: 'Ungarisch', color: '#e53935' },
+      { key: 'k', name: 'Kroatisch', color: '#8e24aa' }
+    ];
+    const BOOK_DIR = 'Buch';
+
+    const statusEl = document.getElementById('status');
+    const stage = document.getElementById('stage');
+    const image = document.getElementById('page-image');
+    const player = document.getElementById('player');
+    const prevBtn = document.getElementById('prev');
+    const nextBtn = document.getElementById('next');
+    const pageLabel = document.getElementById('page-label');
+    const folderPicker = document.getElementById('folder-picker');
+    const folderInput = document.getElementById('folder');
+    const toggleMaps = document.getElementById('toggle-maps');
+
+    let pages = [];
+    let index = 0;
+    let assetUrl = (name) => `${BOOK_DIR}/${name}`;
+    const objectUrls = [];
+
+    function setStatus(text, isError = false) {
+      statusEl.textContent = text;
+      statusEl.classList.toggle('error', isError);
+    }
+
+    function cssPercent(value, property, areaIndex) {
+      const number = Number.parseFloat(String(value).trim());
+      if (!Number.isFinite(number) || number < 0 || number > 100) {
+        throw new Error(`Bereich ${areaIndex + 1}: ungültiges ${property}`);
+      }
+      return `${number}%`;
+    }
+
+    function pagesFromData(data) {
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw new Error('data.json muss ein Objekt mit Seiten-Einträgen sein.');
+      }
+      const keys = Object.keys(data).sort((a, b) => Number(a) - Number(b));
+      if (!keys.length) throw new Error('data.json enthält keine Seiten.');
+      return keys.map((key) => {
+        const page = data[key];
+        if (!page || typeof page !== 'object' || !page.img) {
+          throw new Error(`Seite ${key} hat kein Bild.`);
+        }
+        const map = Array.isArray(page.map) ? page.map : [];
+        return {
+          img: page.img,
+          audio: { d: page.d, u: page.u, k: page.k },
+          map: map.map((area, areaIndex) => {
+            if (!area || typeof area !== 'object') {
+              throw new Error(`Seite ${key}, Bereich ${areaIndex + 1} ist ungültig.`);
+            }
+            const language = LANGUAGES[areaIndex] || {
+              key: '',
+              name: `Bereich ${areaIndex + 1}`,
+              color: '#00c853'
+            };
+            return {
+              left: cssPercent(area.left, 'left', areaIndex),
+              top: cssPercent(area.top, 'top', areaIndex),
+              width: cssPercent(area.width, 'width', areaIndex),
+              height: cssPercent(area.height, 'height', areaIndex),
+              language
+            };
+          })
+        };
+      });
+    }
+
+    function stopAudio() {
+      player.pause();
+      player.removeAttribute('src');
+      player.load();
+      stage.querySelectorAll('.map-area.playing').forEach((el) => {
+        el.classList.remove('playing');
+      });
+    }
+
+    function playLanguage(page, language, button) {
+      const filename = page.audio[language.key];
+      if (!filename) {
+        setStatus(`Kein ${language.name}-Audio auf dieser Seite.`, true);
+        return;
+      }
+      stage.querySelectorAll('.map-area.playing').forEach((el) => {
+        el.classList.remove('playing');
+      });
+      button.classList.add('playing');
+      player.src = assetUrl(filename);
+      player.play().then(() => {
+        setStatus(`Spielt ${language.name}: ${filename}`);
+      }).catch(() => {
+        setStatus(`${filename} konnte nicht abgespielt werden.`, true);
+      });
+    }
+
+    function renderPage() {
+      stopAudio();
+      stage.querySelectorAll('.map-area').forEach((el) => el.remove());
+      const page = pages[index];
+      image.onerror = () => setStatus(`${page.img} konnte nicht geladen werden.`, true);
+      image.src = assetUrl(page.img);
+      image.alt = page.img;
+      pageLabel.textContent = `Seite ${index + 1} / ${pages.length}`;
+      prevBtn.disabled = index <= 0;
+      nextBtn.disabled = index >= pages.length - 1;
+
+      const ranked = page.map
+        .map((area, order) => {
+          const width = parseFloat(area.width);
+          const height = parseFloat(area.height);
+          return { area, order, size: width * height };
+        })
+        .filter((item) => item.size > 0.05);
+      // Smaller regions sit on top so overlapping text remains clickable.
+      ranked.sort((a, b) => b.size - a.size);
+      ranked.forEach(({ area, order }, stack) => {
+        const target = document.createElement('button');
+        target.type = 'button';
+        target.className = 'map-area';
+        target.textContent = order + 1;
+        target.title = area.language.name;
+        target.setAttribute('aria-label', `${area.language.name} vorlesen`);
+        target.style.setProperty('--lang-color', area.language.color);
+        Object.assign(target.style, {
+          left: area.left,
+          top: area.top,
+          width: area.width,
+          height: area.height,
+          zIndex: String(stack + 1)
+        });
+        target.addEventListener('click', () => playLanguage(page, area.language, target));
+        stage.appendChild(target);
+      });
+
+      stage.style.display = 'block';
+      const audioCount = LANGUAGES.filter((lang) => page.audio[lang.key]).length;
+      if (!page.map.length) {
+        setStatus(`${page.img}: keine Klick-Karte`);
+      } else if (!audioCount) {
+        setStatus(`${page.img}: ${page.map.length} Karten, kein Audio`);
+      } else {
+        setStatus(`${page.img}: ${page.map.length} Karten, ${audioCount} Sprachen`);
+      }
+    }
+
+    function goTo(nextIndex) {
+      if (nextIndex < 0 || nextIndex >= pages.length || nextIndex === index) return;
+      index = nextIndex;
+      renderPage();
+    }
+
+    function startBook(data, resolveUrl) {
+      pages = pagesFromData(data);
+      assetUrl = resolveUrl;
+      index = 0;
+      renderPage();
+    }
+
+    async function loadFromServer() {
+      const response = await fetch(`${BOOK_DIR}/data.json`);
+      if (!response.ok) {
+        throw new Error(`data.json nicht gefunden (${response.status})`);
+      }
+      startBook(await response.json(), (name) => `${BOOK_DIR}/${encodeURIComponent(name)}`);
+    }
+
+    function revokeObjectUrls() {
+      objectUrls.splice(0).forEach((url) => URL.revokeObjectURL(url));
+    }
+
+    function loadFromFolder(fileList) {
+      const files = [...fileList];
+      const dataFile = files.find((file) => file.name === 'data.json');
+      if (!dataFile) throw new Error('Im Ordner fehlt data.json.');
+
+      revokeObjectUrls();
+      const urls = new Map();
+      for (const file of files) {
+        const url = URL.createObjectURL(file);
+        objectUrls.push(url);
+        urls.set(file.name, url);
+      }
+      return dataFile.text().then((text) => {
+        startBook(JSON.parse(text), (name) => {
+          const url = urls.get(name);
+          if (!url) throw new Error(`Datei fehlt: ${name}`);
+          return url;
+        });
+      });
+    }
+
+    prevBtn.addEventListener('click', () => goTo(index - 1));
+    nextBtn.addEventListener('click', () => goTo(index + 1));
+    toggleMaps.addEventListener('click', () => {
+      const hidden = document.body.classList.toggle('hide-maps');
+      toggleMaps.classList.toggle('active', !hidden);
+      toggleMaps.setAttribute('aria-pressed', String(!hidden));
+    });
+    folderInput.addEventListener('change', async () => {
+      try {
+        await loadFromFolder(folderInput.files);
+        folderPicker.hidden = true;
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+    player.addEventListener('ended', () => {
+      stage.querySelectorAll('.map-area.playing').forEach((el) => {
+        el.classList.remove('playing');
+      });
+    });
+    player.addEventListener('error', () => {
+      if (player.getAttribute('src')) {
+        setStatus('Die Audiodatei konnte nicht geladen werden.', true);
+      }
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.target.closest('input, textarea, audio')) return;
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        goTo(index - 1);
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        goTo(index + 1);
+      }
+    });
+    window.addEventListener('beforeunload', revokeObjectUrls);
+
+    loadFromServer().catch(() => {
+      folderPicker.hidden = false;
+      setStatus(
+        'Automatisches Laden braucht einen lokalen Server. Ordner „Buch“ wählen oder: python3 -m http.server',
+        true
+      );
+    });
+  </script>
+</body>
+</html>
