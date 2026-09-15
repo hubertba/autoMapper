@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Feature 2 image-map tester</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; font: 16px/1.4 system-ui, sans-serif; color: #202124; background: #f4f6f8; }
+    main { max-width: 1200px; margin: auto; }
+    h1 { margin: 0 0 18px; font-size: 1.6rem; }
+    .controls { display: flex; flex-wrap: wrap; gap: 16px; padding: 16px; margin-bottom: 18px; background: white; border: 1px solid #d8dde3; border-radius: 8px; }
+    label { display: grid; gap: 6px; font-weight: 600; }
+    input[type="file"] { font: inherit; font-weight: normal; }
+    #message { min-height: 24px; margin: 0 0 12px; }
+    #message.error { color: #b00020; }
+    #stage { position: relative; display: none; width: fit-content; max-width: 100%; line-height: 0; background: white; box-shadow: 0 2px 12px #0002; }
+    #image { display: block; max-width: 100%; height: auto; }
+    .map-area { position: absolute; display: flex; align-items: center; justify-content: center; padding: 0; border: 3px solid var(--color); background: color-mix(in srgb, var(--color) 20%, transparent); color: #111; font: 700 12px/1 system-ui, sans-serif; cursor: pointer; }
+    .map-area:hover, .map-area:focus, .map-area.playing { z-index: 2; outline: 2px solid white; background: rgb(255 193 7 / 40%); border-color: #ff9800; }
+    audio { display: block; width: min(500px, 100%); margin: 16px 0; }
+    .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 12px; }
+    .legend span::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 5px; background: var(--color); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Feature 2 image-map tester</h1>
+    <section class="controls" aria-label="File selection">
+      <label>Select page image<input id="image-file" type="file" accept="image/*"></label>
+      <label>Select feature-2 map<input id="map-file" type="file" accept=".txt,.json,application/json,text/plain"></label>
+      <label>Select the page's six MP3 files<input id="audio-files" type="file" accept="audio/*,.mp3" multiple></label>
+    </section>
+    <div class="legend" aria-hidden="true">
+      <span style="--color:#1e88e5">German</span><span style="--color:#e53935">Hungarian</span><span style="--color:#8e24aa">Croatian</span>
+    </div>
+    <p id="message">Select an image, its .feat2.map.txt file, and 01.mp3–06.mp3.</p>
+    <audio id="player" controls></audio>
+    <div id="stage"><img id="image" alt="Selected page image"></div>
+  </main>
+  <script>
+    const COLORS = { de: '#1e88e5', hu: '#e53935', hr: '#8e24aa' };
+    const NAMES = { de: 'German', hu: 'Hungarian', hr: 'Croatian' };
+    const imageInput = document.getElementById('image-file');
+    const mapInput = document.getElementById('map-file');
+    const audioInput = document.getElementById('audio-files');
+    const stage = document.getElementById('stage');
+    const image = document.getElementById('image');
+    const player = document.getElementById('player');
+    const message = document.getElementById('message');
+    let imageUrl = null;
+    let audioUrl = null;
+    let areas = null;
+    let audioFiles = new Map();
+
+    function setMessage(text, error = false) { message.textContent = text; message.classList.toggle('error', error); }
+    function percent(value, property, index) {
+      const number = Number.parseFloat(String(value).trim());
+      if (!Number.isFinite(number) || number < 0 || number > 100) throw new Error(`Area ${index + 1}: invalid ${property}`);
+      return `${number}%`;
+    }
+    function validateMap(data) {
+      const list = Array.isArray(data) ? data : data.areas;
+      if (!Array.isArray(list) || !list.length) throw new Error('The map must be a non-empty JSON array.');
+      return list.map((area, index) => {
+        if (!area || typeof area !== 'object' || !(area.language in COLORS)) throw new Error(`Area ${index + 1}: invalid language.`);
+        const audio = String(area.audio || '');
+        if (!/^0[1-6]\.mp3$/i.test(audio)) throw new Error(`Area ${index + 1}: invalid audio filename.`);
+        const clean = { left: percent(area.left, 'left', index), top: percent(area.top, 'top', index), width: percent(area.width, 'width', index), height: percent(area.height, 'height', index), language: area.language, picture: Number(area.picture) || 1, audio };
+        if (parseFloat(clean.left) + parseFloat(clean.width) > 100.01 || parseFloat(clean.top) + parseFloat(clean.height) > 100.01) throw new Error(`Area ${index + 1} extends outside the image.`);
+        return clean;
+      });
+    }
+    function stopAudio() {
+      player.pause();
+      stage.querySelectorAll('.playing').forEach(element => element.classList.remove('playing'));
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      audioUrl = null;
+      player.removeAttribute('src');
+    }
+    function play(area, button) {
+      stopAudio();
+      const file = audioFiles.get(area.audio.toLowerCase());
+      if (!file) { setMessage(`Select ${area.audio} to test this ${NAMES[area.language]} picture.`, true); return; }
+      audioUrl = URL.createObjectURL(file);
+      player.src = audioUrl;
+      button.classList.add('playing');
+      player.play().then(() => setMessage(`Playing ${NAMES[area.language]} picture ${area.picture}: ${area.audio}`)).catch(() => setMessage(`${area.audio} could not be played.`, true));
+    }
+    function render() {
+      stopAudio();
+      stage.querySelectorAll('.map-area').forEach(element => element.remove());
+      if (!imageUrl || !areas) { stage.style.display = imageUrl ? 'block' : 'none'; return; }
+      areas.forEach((area, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'map-area';
+        button.textContent = area.audio.slice(0, 2);
+        button.title = `${NAMES[area.language]} picture ${area.picture} — ${area.audio}`;
+        button.setAttribute('aria-label', button.title);
+        button.style.setProperty('--color', COLORS[area.language]);
+        Object.assign(button.style, { left: area.left, top: area.top, width: area.width, height: area.height });
+        button.addEventListener('click', () => play(area, button));
+        stage.appendChild(button);
+      });
+      stage.style.display = 'block';
+      setMessage(`Displaying ${areas.length} clickable image areas; ${audioFiles.size} audio files selected.`);
+    }
+    imageInput.addEventListener('change', () => {
+      const file = imageInput.files[0];
+      if (!file || !file.type.startsWith('image/')) { setMessage('Please select a valid image.', true); return; }
+      if (imageUrl) URL.revokeObjectURL(imageUrl);
+      imageUrl = URL.createObjectURL(file); image.src = imageUrl; image.onload = render;
+      image.onerror = () => setMessage('The selected image could not be loaded.', true);
+    });
+    mapInput.addEventListener('change', async () => {
+      const file = mapInput.files[0]; if (!file) return;
+      try { areas = validateMap(JSON.parse(await file.text())); render(); }
+      catch (error) { areas = null; render(); setMessage(`Map error: ${error.message}`, true); }
+    });
+    audioInput.addEventListener('change', () => { audioFiles = new Map([...audioInput.files].map(file => [file.name.toLowerCase(), file])); render(); });
+    window.addEventListener('beforeunload', () => { if (imageUrl) URL.revokeObjectURL(imageUrl); if (audioUrl) URL.revokeObjectURL(audioUrl); });
+  </script>
+</body>
+</html>

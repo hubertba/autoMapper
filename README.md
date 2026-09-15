@@ -195,14 +195,44 @@ If automatic results are inaccurate:
 3. Adjust hue ranges in `COLORS` for different ink shades.
 4. As a final correction, edit percentage values in `.map.txt` and matching pixel coordinates in generated HTML.
 
+## Feature 2: pictures inside the text
+
+`create_image_maps.py` detects the small illustrations embedded in the German,
+Hungarian, and Croatian paragraphs. Run it on the complete supplied book:
+
+```bash
+python3 create_image_maps.py Mitlesebuch
+```
+
+It prefers the edited PNG when a page folder contains both PNG and JPEG files
+and writes `<page>.feat2.map.txt` beside each page. A single image can also be
+processed:
+
+```bash
+python3 create_image_maps.py "Mitlesebuch/Seite 10/16 - MISI 9.png"
+```
+
+Every map entry contains percentage coordinates plus `language`, `picture`, and
+`audio`. Audio is assigned in the requested order: German `01.mp3`/`02.mp3`,
+Hungarian `03.mp3`/`04.mp3`, and Croatian `05.mp3`/`06.mp3`. The strongest
+occurrence of each of the two picture concepts is kept, so every page map has
+exactly six rectangles. Open `map-tester-feat2.html`, select the page, generated map, and the page's six
+MP3 files, then click the coloured rectangles to test them.
+
+A page folder without a Pillow-readable raster image (for example, one that
+only contains a `.pxd` editor document) is reported and skipped; export it as
+PNG or JPEG and run the command again.
+
 ## Project files
 
 ```text
-create_click_map.py   Detection and output generator
-map-tester.html       Standalone visual map tester
-requirements.txt      Python dependency list
-*.map.txt             Percentage map examples
-*.clickmap.html       Generated native HTML-map examples
+create_click_map.py    Text detection and output generator
+create_image_maps.py   Inline-picture detection and audio-map generator
+map-tester.html        Text-map visual tester
+map-tester-feat2.html  Picture-map and MP3 visual tester
+requirements.txt       Python dependency list
+*.map.txt              Percentage map examples
+*.clickmap.html        Generated native HTML-map examples
 ```
 
 The Python and JavaScript source is extensively commented to explain the image-processing and rendering decisions.
